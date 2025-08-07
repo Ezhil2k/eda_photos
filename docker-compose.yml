@@ -1,0 +1,46 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:latest
+    container_name: eda_photos_db
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: eda_photos
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks:
+      - eda_photos_network
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: eda_photos_backend
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    volumes:
+      - ./backend:/app
+      - ./images:/app/images
+    environment:
+      DATABASE_URL: postgresql://user:password@db:5432/eda_photos
+    depends_on:
+      - db
+    networks:
+      - eda_photos_network
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 30s
+      retries: 3
+      start_period: 5s
+
+volumes:
+  pgdata:
+
+networks:
+  eda_photos_network:
+    driver: bridge
