@@ -2,7 +2,7 @@ version: '3.8'
 
 services:
   db:
-    image: postgres:latest
+    image: pgvector/pgvector:pg17
     container_name: eda_photos_db
     environment:
       POSTGRES_USER: user
@@ -10,6 +10,12 @@ services:
       POSTGRES_DB: eda_photos
     volumes:
       - pgdata:/var/lib/postgresql/data
+      - ./db/init:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h localhost -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
     networks:
       - eda_photos_network
 
@@ -25,7 +31,8 @@ services:
     environment:
       DATABASE_URL: postgresql://user:password@db:5432/eda_photos
     depends_on:
-      - db
+      db:
+        condition: service_healthy
     networks:
       - eda_photos_network
     ports:

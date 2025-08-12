@@ -1,6 +1,6 @@
 # Import statements
 from fastapi import FastAPI
-from .routers import auth, images, health, search
+from .routers import auth, images, health, search, admin, faces
 
 # FastAPI app with automatic Swagger documentation
 app = FastAPI(
@@ -11,7 +11,9 @@ app = FastAPI(
         {"name": "auth", "description": "Operations related to user authentication"},
         {"name": "images", "description": "Operations related to image management"},
         {"name": "search", "description": "Operations related to image search"},
-        {"name": "health", "description": "Health check endpoint"}
+        {"name": "faces", "description": "Face extraction, encoding, and search"},
+        {"name": "health", "description": "Health check endpoint"},
+        {"name": "admin", "description": "Administrative endpoints"}
     ]
 )
 
@@ -20,6 +22,8 @@ app.include_router(auth.router)
 app.include_router(images.router)
 app.include_router(health.router)
 app.include_router(search.router)
+app.include_router(faces.router)
+app.include_router(admin.router)
 
 # Future Feature: Implement CLIP search functionality here
 # Future Feature: Implement face clustering logic here
