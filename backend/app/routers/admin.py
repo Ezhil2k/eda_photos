@@ -2,12 +2,13 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 from ..database import get_db, ImageEmbedding
 from ..services.clip_service import generate_clip_image_embeddings
+from .faces import process_faces as run_face_processing
 import os
 
 router = APIRouter()
 
-# Directory where images are stored inside the container
-IMAGES_DIR = "/app/images"
+# Directory where images are stored inside the container (env override for consistency)
+IMAGES_DIR = os.getenv("IMAGE_DIR", "/app/images")
 
 @router.post("/admin/reprocess_embeddings", tags=["admin"])
 async def reprocess_embeddings(
@@ -47,6 +48,9 @@ async def reprocess_embeddings(
 
     db.commit()
 
+    # Also (re)process face recognition clusters and store cache in DB
+    faces_result = await run_face_processing(db)  # returns {"faces": {...}, "status": "ok"}
+
     return {
         "processed": processed,
         "created": created,
@@ -54,4 +58,6 @@ async def reprocess_embeddings(
         "skipped": skipped,
         "errors_count": len(errors),
         "errors": errors[:10],  # return up to 10 error details
+        "faces": faces_result.get("faces"),
+        "faces_status": faces_result.get("status"),
     }

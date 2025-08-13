@@ -35,6 +35,13 @@ class FaceEmbedding(Base):
     box = Column(JSON)  # {top, right, bottom, left}
     embedding = Column(Vector(128))
 
+# Cache for face group clusters stored as JSON
+class FaceGroupsCache(Base):
+    __tablename__ = "face_groups_cache"
+
+    id = Column(Integer, primary_key=True)
+    data = Column(JSON)  # {"clusters": {"<label>": ["<filename>", ...]}, "total_clusters": <int>}
+
 # Create tables
 Base.metadata.create_all(bind=engine)
 

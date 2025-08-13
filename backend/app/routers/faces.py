@@ -1,6 +1,6 @@
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
-from ..database import get_db, FaceEmbedding
+from ..database import get_db, FaceGroupsCache
 from ..services.face_service import extract_faces_and_encodings
 import os
 import numpy as np
@@ -8,81 +8,61 @@ from sklearn.cluster import DBSCAN
 
 router = APIRouter()
 
-IMAGES_DIR = "/app/images"
+IMAGES_DIR = os.getenv("IMAGE_DIR", "/app/images")
 
-@router.post("/faces/reprocess", tags=["faces"])
-async def faces_reprocess(image_name: str = Query(None), force: bool = Query(False), db: Session = Depends(get_db)):
-    processed = created = updated = skipped = 0
-    errors = []
-    targets = []
-    if image_name:
-        targets = [image_name]
-    else:
-        if not os.path.isdir(IMAGES_DIR):
-            return {"processed": 0, "created": 0, "updated": 0, "skipped": 0, "errors": [f"Images dir not found: {IMAGES_DIR}"]}
-        targets = [f for f in os.listdir(IMAGES_DIR) if os.path.isfile(os.path.join(IMAGES_DIR, f))]
+@router.post("/process-faces", tags=["faces"])
+async def process_faces(db: Session = Depends(get_db)):
+    if not os.path.isdir(IMAGES_DIR):
+        payload = {"clusters": {}, "total_clusters": 0}
+        # Upsert single row cache
+        existing = db.query(FaceGroupsCache).first()
+        if existing:
+            existing.data = payload
+        else:
+            db.add(FaceGroupsCache(data=payload))
+        db.commit()
+        return {"faces": payload, "status": "ok"}
 
-    for fname in targets:
-        processed += 1
+    encs = []
+    names = []
+    for fname in sorted(os.listdir(IMAGES_DIR)):
         path = os.path.join(IMAGES_DIR, fname)
-        try:
-            existing = db.query(FaceEmbedding).filter(FaceEmbedding.image_name == fname).first()
-            if existing and not force:
-                skipped += 1
-                continue
-            faces = extract_faces_and_encodings(path)
-            # Replace existing rows
-            db.query(FaceEmbedding).filter(FaceEmbedding.image_name == fname).delete()
-            for idx, (enc, box) in enumerate(faces):
-                db.add(FaceEmbedding(image_name=fname, face_index=idx, box=box, embedding=enc))
-            db.commit()
-            if existing:
-                updated += 1
-            else:
-                created += 1
-        except Exception as e:
-            db.rollback()
-            errors.append({"file": fname, "error": str(e)})
-
-    return {"processed": processed, "created": created, "updated": updated, "skipped": skipped, "errors": errors[:10]}
-
-# Simple listing of faces by image
-@router.get("/faces/by-image", tags=["faces"])
-async def faces_by_image(image_name: str, db: Session = Depends(get_db)):
-    rows = db.query(FaceEmbedding).filter(FaceEmbedding.image_name == image_name).all()
-    return [{"image_name": r.image_name, "face_index": r.face_index, "box": r.box} for r in rows]
-
-# Cluster faces across all images and return groups
-@router.get("/faces/clusters", tags=["faces"])
-async def faces_clusters(eps: float = 0.45, min_samples: int = 2, db: Session = Depends(get_db)):
-    # Fetch all face embeddings
-    rows = db.query(FaceEmbedding).all()
-    if not rows:
-        return {"clusters": [], "info": "no face embeddings"}
-
-    X = np.array([r.embedding for r in rows], dtype=np.float32)
-    # DBSCAN with cosine-like distance: use metric='euclidean' on normalized vectors if needed
-    # Normalize encodings for better clustering stability
-    norms = np.linalg.norm(X, axis=1, keepdims=True) + 1e-8
-    Xn = X / norms
-    clustering = DBSCAN(eps=eps, min_samples=min_samples, metric='euclidean').fit(Xn)
-    labels = clustering.labels_.tolist()
-
-    # Group results by cluster label (ignore noise label -1)
-    clusters = {}
-    for r, label in zip(rows, labels):
-        if label == -1:
+        if not os.path.isfile(path):
             continue
-        clusters.setdefault(label, []).append({
-            "image_name": r.image_name,
-            "face_index": r.face_index,
-            "box": r.box
-        })
+        if not fname.lower().endswith((".jpg", ".jpeg", ".png")):
+            continue
+        try:
+            faces = extract_faces_and_encodings(path)
+            for enc, _ in faces:
+                encs.append(enc)
+                names.append(fname)
+        except Exception:
+            continue
 
-    # Convert to list of clusters sorted by size
-    cluster_list = [
-        {"cluster_id": int(cid), "count": len(items), "faces": items}
-        for cid, items in sorted(clusters.items(), key=lambda kv: -len(kv[1]))
-    ]
+    clusters_out = {}
+    if encs:
+        X = np.array(encs, dtype=np.float32)
+        clustering = DBSCAN(metric='euclidean', eps=0.6, min_samples=1)
+        labels = clustering.fit_predict(X).tolist()
 
-    return {"clusters": cluster_list, "params": {"eps": eps, "min_samples": min_samples}}
+        cluster_map = {}
+        for label, fname in zip(labels, names):
+            cluster_map.setdefault(str(label), []).append(fname)
+        clusters_out = cluster_map
+
+    payload = {"clusters": clusters_out, "total_clusters": len(clusters_out)}
+    existing = db.query(FaceGroupsCache).first()
+    if existing:
+        existing.data = payload
+    else:
+        db.add(FaceGroupsCache(data=payload))
+    db.commit()
+
+    return {"faces": payload, "status": "ok"}
+
+@router.get("/face-groups", tags=["faces"])
+async def face_groups(db: Session = Depends(get_db)):
+    cached = db.query(FaceGroupsCache).first()
+    if not cached or not cached.data:
+        return {"clusters": {}, "total_clusters": 0}
+    return cached.data
