@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 from ..database import get_db, ImageEmbedding
 from ..services.clip_service import generate_clip_image_embeddings
+from ..deps import get_current_user
 from .faces import process_faces as run_face_processing
 import os
 
@@ -14,6 +15,7 @@ IMAGES_DIR = os.getenv("IMAGE_DIR", "/app/images")
 async def reprocess_embeddings(
     force: bool = Query(False, description="If true, recompute and overwrite existing embeddings"),
     db: Session = Depends(get_db),
+    user=Depends(get_current_user),
 ):
     if not os.path.isdir(IMAGES_DIR):
         return {"processed": 0, "created": 0, "updated": 0, "skipped": 0, "errors": [f"Images dir not found: {IMAGES_DIR}"]}

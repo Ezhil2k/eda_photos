@@ -2,13 +2,14 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from sqlalchemy import text, bindparam
 from ..database import get_db
+from ..deps import get_current_user
 from ..services.clip_service import generate_clip_text_embeddings
 from pgvector.sqlalchemy import Vector
 
 router = APIRouter()
 
 @router.get("/search", tags=["search"])
-async def search(query: str, db: Session = Depends(get_db)):
+async def search(query: str, db: Session = Depends(get_db), user=Depends(get_current_user)):
     # Generate text embedding for query
     q_emb = generate_clip_text_embeddings(query)
     emb_param = [float(x) for x in q_emb.tolist()]

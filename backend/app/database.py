@@ -42,6 +42,9 @@ class FaceGroupsCache(Base):
     id = Column(Integer, primary_key=True)
     data = Column(JSON)  # {"clusters": {"<label>": ["<filename>", ...]}, "total_clusters": <int>}
 
+# Ensure all models are registered before creating tables
+from . import models  # noqa: F401
+
 # Create tables
 Base.metadata.create_all(bind=engine)
 
@@ -52,4 +55,4 @@ def get_db():
         yield db
     finally:
         db.close()
- 
+  

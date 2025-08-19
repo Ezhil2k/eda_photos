@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from ..database import get_db, FaceGroupsCache
 from ..services.face_service import extract_faces_and_encodings
+from ..deps import get_current_user
 import os
 import numpy as np
 from sklearn.cluster import DBSCAN
@@ -11,7 +12,7 @@ router = APIRouter()
 IMAGES_DIR = os.getenv("IMAGE_DIR", "/app/images")
 
 @router.post("/process-faces", tags=["faces"])
-async def process_faces(db: Session = Depends(get_db)):
+async def process_faces(db: Session = Depends(get_db), user=Depends(get_current_user)):
     if not os.path.isdir(IMAGES_DIR):
         payload = {"clusters": {}, "total_clusters": 0}
         # Upsert single row cache
@@ -61,7 +62,7 @@ async def process_faces(db: Session = Depends(get_db)):
     return {"faces": payload, "status": "ok"}
 
 @router.get("/face-groups", tags=["faces"])
-async def face_groups(db: Session = Depends(get_db)):
+async def face_groups(db: Session = Depends(get_db), user=Depends(get_current_user)):
     cached = db.query(FaceGroupsCache).first()
     if not cached or not cached.data:
         return {"clusters": {}, "total_clusters": 0}

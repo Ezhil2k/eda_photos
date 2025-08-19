@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 from typing import List
 from pydantic import BaseModel
 from ..database import get_db, ImageEmbedding, FaceEmbedding
+from ..deps import get_current_user
 from ..services.clip_service import generate_clip_image_embeddings
 from PIL import Image
 from PIL.ExifTags import TAGS
@@ -25,7 +26,7 @@ def extract_exif(image_path):
 
 # Unified upload: accepts 1..N files
 @router.post("/upload", tags=["images"])
-async def upload_images(files: List[UploadFile] = File(...), db: Session = Depends(get_db)):
+async def upload_images(files: List[UploadFile] = File(...), db: Session = Depends(get_db), user=Depends(get_current_user)):
     processed = created = updated = failed = 0
     results = []
     for file in files:
@@ -81,7 +82,7 @@ class DeleteRequest(BaseModel):
     filenames: List[str]
 
 @router.delete("/images", tags=["images"])
-async def delete_images(payload: DeleteRequest, db: Session = Depends(get_db)):
+async def delete_images(payload: DeleteRequest, db: Session = Depends(get_db), user=Depends(get_current_user)):
     deleted_files = deleted_rows = not_found = 0
     details = []
     for filename in payload.filenames:
